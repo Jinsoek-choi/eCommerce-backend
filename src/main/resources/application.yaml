@@ -1,7 +1,20 @@
 spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://database-1.cj002sycood8.ap-southeast-2.rds.amazonaws.com:3306/team_project?serverTimezone=Asia/Seoul
+    username: jinseok
+    password: jin1234!
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
   application:
     name: backend
 
   autoconfigure:
-    exclude:
-      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+

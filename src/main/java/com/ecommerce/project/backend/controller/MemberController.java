@@ -3,33 +3,35 @@ package com.ecommerce.project.backend.controller;
 import com.ecommerce.project.backend.domain.Member;
 import com.ecommerce.project.backend.repository.MemberRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/api/member")
-@CrossOrigin(origins = "http://localhost:3000") // React 개발 서버
+@RequestMapping("/api")
+@CrossOrigin(origins = "http://localhost:3000")
 public class MemberController {
 
     private final MemberRepository memberRepository;
 
-    // 회원가입 API
     @PostMapping("/signup")
-    public String signup(@RequestBody Member member) {
-        if (memberRepository.findByEmail(member.getEmail()).isPresent()) {
-            return "이미 존재하는 이메일입니다.";
-        }
-        memberRepository.save(member);
-        return "회원가입 성공";
-    }
+    public ResponseEntity<String> signup(@RequestBody Member request) {
+        String email = request.getEmail();
+        String pw = request.getPassword();
 
-    // 로그인 API
-    @PostMapping("/login")
-    public String login(@RequestBody Member member) {
-        return memberRepository.findByEmail(member.getEmail())
-                .filter(m -> m.getPassword().equals(member.getPassword()))
-                .map(m -> "로그인 성공")
-                .orElse("이메일 또는 비밀번호가 올바르지 않습니다.");
+        // ✅ 이메일 중복 검사
+        if (memberRepository.findByEmail(email).isPresent()) {
+            return ResponseEntity.status(409).body("❌ 이미 존재하는 이메일입니다.");
+        }
+
+        // ✅ 새 회원 저장
+        Member newMember = new Member();
+        newMember.setEmail(email);
+        newMember.setPassword(pw);
+        newMember.setRole("USER");
+
+        memberRepository.save(newMember);
+        return ResponseEntity.ok("✅ 회원가입 성공!");
     }
 }
 

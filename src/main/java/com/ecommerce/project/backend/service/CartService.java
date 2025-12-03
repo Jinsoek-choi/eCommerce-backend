@@ -58,7 +58,8 @@ public class CartService {
      * 장바구니 담기
      * ------------------------- */
     @Transactional
-    public CartAddResponseDto addToCart(Long memberId, CartAddRequestDto req) {
+    public void addToCart(Long memberId, CartAddRequestDto req) {
+
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new RuntimeException("회원 없음"));
 

@@ -287,4 +287,15 @@ public class CartService {
 
         cartRepository.delete(cart);  // 장바구니 항목 삭제
     }
+
+    @Transactional
+    public void clearCartByMemberId(Long memberId) {
+        cartRepository.deleteByMemberId(memberId);
+    }
+
+    @Transactional
+    public void clearCartBySessionId(String sessionId) {
+        cartRepository.deleteBySessionId(sessionId);
+    }
+
 }

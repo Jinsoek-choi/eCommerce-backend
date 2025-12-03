@@ -22,38 +22,6 @@ public class CartService {
     private final ProductRepository productRepository;
     private final MusinsaConfig musinsaConfig;
 
-    // 장바구니 조회 (CartAddResponseDto 반환)
-    public CartAddResponseDto getCartResponse(Long memberId) {
-        // 1. memberId로 카트 목록을 조회
-        List<Cart> carts = cartRepository.findByMember_Id(memberId);
-
-        // 2. 카트 항목들을 DTO로 변환
-        List<CartItemDto> cartItemDtos = carts.stream()
-                .map(cart -> CartItemDto.builder()
-                        .cartId(cart.getCartId())
-                        .productId(cart.getProduct().getProductId())
-                        .productName(cart.getProduct().getProductName())
-                        .thumbnail(cart.getProduct().getMainImg())
-                        .quantity(cart.getQuantity())
-                        .price(cart.getProduct().getSellPrice().intValue())
-                        .stock(cart.getProduct().getStock())
-                        .soldOut(cart.getProduct().getStock() <= 0)
-                        .optionValue(cart.getOptionValue())  // 옵션 값 설정
-                        .optionTitle(cart.getOptionTitle()) // 옵션 타이틀 설정
-                        .build())
-                .collect(Collectors.toList());
-
-        // 3. 총 가격과 총 수량 계산
-        Integer totalPrice = cartItemDtos.stream().mapToInt(CartItemDto::getPrice).sum();
-        Integer totalQuantity = cartItemDtos.stream().mapToInt(CartItemDto::getQuantity).sum();
-
-        // 4. DTO로 응답 생성
-        return CartAddResponseDto.builder()
-                .items(cartItemDtos)
-                .totalPrice(totalPrice)
-                .totalQuantity(totalQuantity)
-                .build();
-    }
     /** -------------------------
      * 장바구니 담기
      * ------------------------- */
@@ -66,92 +34,88 @@ public class CartService {
         Product product = productRepository.findById(req.getProductId())
                 .orElseThrow(() -> new RuntimeException("상품 없음"));
 
-        String optionValue = req.getOptionValue();  // 옵션 값
-        boolean isOptionProduct = product.getIsOption();  // 옵션 상품 여부
-        String optionTitle = "";  // 옵션 타이틀 기본값 빈 문자열
-
+        boolean isOptionProduct = product.getIsOption(); // tinyint(1) → boolean 매핑된 걸로 가정
         List<CartItemDto> cartItemDtos = new ArrayList<>();
 
         if (isOptionProduct) {
-            if (optionValue == null || optionValue.isEmpty()) {
+            // ---------------- 옵션 상품 ----------------
+            String optionValue = req.getOptionValue();
+
+            if (optionValue == null || optionValue.isBlank()) {
                 throw new IllegalArgumentException("옵션 값이 필요합니다.");
             }
 
-            // ProductOption에서 optionValue를 기준으로 optionTitle을 가져옴
+            // 옵션 유효성 / 타이틀 조회
             ProductOption productOption = product.getProductOptions().stream()
-                    .filter(option -> option.getOptionValue().equals(optionValue))
+                    .filter(option -> optionValue.equals(option.getOptionValue()))
                     .findFirst()
                     .orElseThrow(() -> new IllegalArgumentException("유효하지 않은 옵션입니다."));
 
-            optionTitle = productOption.getOptionTitle();  // DB에서 가져온 optionTitle 사용
+            String optionTitle = productOption.getOptionTitle(); // 예: "색상"
 
+            // 같은 상품 + 같은 옵션이면 수량만 증가
             Optional<Cart> existing = cartRepository
                     .findByMember_IdAndProduct_ProductIdAndOptionValue(memberId, req.getProductId(), optionValue);
 
+            Cart cart;
             if (existing.isPresent()) {
-                Cart cart = existing.get();
+                cart = existing.get();
                 int newQty = cart.getQuantity() + req.getQuantity();
                 if (newQty > product.getStock()) throw new IllegalArgumentException("재고 부족");
                 cart.setQuantity(newQty);
-                cartItemDtos.add(buildCartItemDto(cart, optionTitle));
             } else {
-                Cart newCart = cartRepository.save(Cart.builder()
+                cart = Cart.builder()
                         .member(member)
                         .product(product)
-                        .optionValue(optionValue) // optionValue를 그대로 사용
+                        .optionValue(optionValue)   // 옵션상품은 실제 값 ("블랙" 등)
                         .quantity(req.getQuantity())
-                        .build());
-                cartItemDtos.add(buildCartItemDto(newCart, optionTitle));
+                        .build();
+                cartRepository.save(cart);
             }
+
+            cartItemDtos.add(buildCartItemDto(cart, optionTitle));
+
         } else {
-            if (product.getStock() < req.getQuantity())
+            // ---------------- 단품 상품 ----------------
+            if (product.getStock() < req.getQuantity()) {
                 throw new IllegalArgumentException("재고 부족");
+            }
 
+            // 단품은 옵션이 없으므로, optionValue = '' 을 기준으로 찾는다
             Optional<Cart> existing = cartRepository
-                    .findByMember_IdAndProduct_ProductIdAndOptionValueIsNull(memberId, req.getProductId());
+                    .findByMember_IdAndProduct_ProductIdAndOptionValue(memberId, req.getProductId(), "");
 
+            Cart cart;
             if (existing.isPresent()) {
-                Cart cart = existing.get();
+                cart = existing.get();
                 int newQty = cart.getQuantity() + req.getQuantity();
                 if (newQty > product.getStock()) throw new IllegalArgumentException("재고 부족");
                 cart.setQuantity(newQty);
-                cartItemDtos.add(buildCartItemDto(cart, "")); // 옵션이 없으면 optionTitle은 빈 문자열
             } else {
-                Cart newCart = cartRepository.save(Cart.builder()
+                cart = Cart.builder()
                         .member(member)
                         .product(product)
-                        .optionValue("")  // 빈 문자열로 저장 (옵션 없는 상품)
+                        .optionValue("")            // ★ 단품 규칙: 항상 빈 문자열
                         .quantity(req.getQuantity())
-                        .build());
-                cartItemDtos.add(buildCartItemDto(newCart, "")); // 옵션이 없으면 빈 문자열
+                        .build();
+                cartRepository.save(cart);
             }
+
+            cartItemDtos.add(buildCartItemDto(cart, "")); // 단품은 optionTitle 도 빈 문자열
         }
 
-        int totalPrice = cartItemDtos.stream().mapToInt(item -> item.getPrice() * item.getQuantity()).sum();
-        int totalQuantity = cartItemDtos.stream().mapToInt(CartItemDto::getQuantity).sum();
+        int totalPrice = cartItemDtos.stream()
+                .mapToInt(item -> item.getPrice() * item.getQuantity())
+                .sum();
+
+        int totalQuantity = cartItemDtos.stream()
+                .mapToInt(CartItemDto::getQuantity)
+                .sum();
 
         return CartAddResponseDto.builder()
                 .items(cartItemDtos)
                 .totalPrice(totalPrice)
                 .totalQuantity(totalQuantity)
-                .build();
-    }
-
-    private CartItemDto buildCartItemDto(Cart cart, String optionTitle) {
-        Product product = cart.getProduct();
-        // 빈 문자열로 설정된 경우, optionTitle은 빈 문자열로 설정
-        String finalOptionTitle = (optionTitle == null || optionTitle.isEmpty()) ? "" : optionTitle;
-        return CartItemDto.builder()
-                .cartId(cart.getCartId())
-                .productId(product.getProductId())
-                .productName(product.getProductName())
-                .thumbnail(product.getMainImg())
-                .quantity(cart.getQuantity())
-                .price(product.getSellPrice().intValue())
-                .stock(product.getStock())
-                .soldOut(product.getStock() <= 0)
-                .optionValue(cart.getOptionValue()) // optionValue를 그대로 사용
-                .optionTitle(finalOptionTitle)  // DB에서 가져온 optionTitle을 그대로 사용
                 .build();
     }
 
@@ -162,64 +126,78 @@ public class CartService {
     @Transactional(readOnly = true)
     public CartResponseDto getCart(Long memberId) {
 
-        // 장바구니 항목 조회
         List<Cart> carts = cartRepository.findByMember_Id(memberId);
         String baseUrl = musinsaConfig.getImageBaseUrl();
 
-        // 장바구니 아이템 정보 생성
         List<CartItemDto> items = carts.stream().map(cart -> {
 
             Product p = cart.getProduct();
-            String optionValue = cart.getOptionValue();  // 옵션 값만 사용 (ProductOption 대신)
+            boolean isOptionProduct = p.getIsOption();   // tinyint(1) → boolean 가정
 
-            // optionValue에 맞는 optionTitle을 ProductOption에서 찾아오기
-            String optionTitle = null;
-            if (optionValue != null && !optionValue.isEmpty()) {
-                // 옵션 값에 맞는 옵션 타이틀을 DB에서 찾기
-                ProductOption productOption = p.getProductOptions().stream()
-                        .filter(option -> option.getOptionValue().equals(optionValue)) // DB에서 옵션 값 비교
-                        .findFirst()
-                        .orElse(null);
-                optionTitle = productOption != null ? productOption.getOptionTitle() : null; // optionTitle 설정
-            }
+            String optionValue;
+            String optionTitle;
 
-            // 이미지 URL 설정 (기본 URL과 함께 조합)
-            String fullImg = null;
-            if (p.getMainImg() != null) {
-                if (p.getMainImg().startsWith("/")) {
-                    fullImg = baseUrl + p.getMainImg(); // 기본 URL을 앞에 붙임
+            if (!isOptionProduct) {
+                // -------- 단품 규칙 --------
+                optionValue = "";
+                optionTitle = "";
+            } else {
+                // -------- 옵션 상품 규칙 --------
+                optionValue = cart.getOptionValue();
+
+                if (optionValue == null || optionValue.isBlank()) {
+                    // 데이터가 잘못된 상태 → 일단 프론트 안 깨지게만
+                    optionValue = "";
+                    optionTitle = "";
                 } else {
-                    fullImg = baseUrl + "/" + p.getMainImg(); // 기본 URL을 앞에 붙임
+                    // optionValue 에 맞는 optionTitle 찾기 (for-loop 사용)
+                    ProductOption matched = null;
+                    for (ProductOption o : p.getProductOptions()) {
+                        if (optionValue.equals(o.getOptionValue())) {
+                            matched = o;
+                            break;
+                        }
+                    }
+
+                    optionTitle = (matched != null && matched.getOptionTitle() != null)
+                            ? matched.getOptionTitle()
+                            : "";
                 }
             }
 
-            // 가격 계산 (옵션이 없으면 기본 가격을 사용)
-            int price = p.getSellPrice().intValue();
+            String fullImg = null;
+            if (p.getMainImg() != null) {
+                if (p.getMainImg().startsWith("/")) {
+                    fullImg = baseUrl + p.getMainImg();
+                } else {
+                    fullImg = baseUrl + "/" + p.getMainImg();
+                }
+            }
 
-            // 품절 처리 (재고가 0 이하일 경우)
+            int price = p.getSellPrice().intValue();
             boolean soldOut = p.getStock() <= 0;
 
-            // CartItemDto 빌드하여 반환
             return CartItemDto.builder()
                     .cartId(cart.getCartId())
                     .productId(p.getProductId())
                     .productName(p.getProductName())
-                    .thumbnail(fullImg) // 이미지 URL
+                    .thumbnail(fullImg)
                     .quantity(cart.getQuantity())
-                    .price(price)  // 가격 (옵션이 없으면 기본 가격)
-                    .stock(p.getStock())  // 상품의 재고
-                    .soldOut(soldOut)  // 품절 여부
-                    .optionValue(optionValue)  // 옵션 값
-                    .optionTitle(optionTitle)  // 옵션 타이틀
+                    .price(price)
+                    .stock(p.getStock())
+                    .soldOut(soldOut)
+                    .optionValue(optionValue)   // 단품: "", 옵션: "블랙"
+                    .optionTitle(optionTitle)   // 단품: "", 옵션: "색상"
                     .build();
-
         }).toList();
 
-        // 총 금액과 총 수량 계산
-        int totalPrice = items.stream().mapToInt(i -> i.getPrice() * i.getQuantity()).sum();
-        int totalQty = items.stream().mapToInt(CartItemDto::getQuantity).sum();
+        int totalPrice = items.stream()
+                .mapToInt(i -> i.getPrice() * i.getQuantity())
+                .sum();
+        int totalQty = items.stream()
+                .mapToInt(CartItemDto::getQuantity)
+                .sum();
 
-        // CartResponseDto 반환
         return CartResponseDto.builder()
                 .items(items)
                 .totalPrice(totalPrice)
@@ -228,31 +206,49 @@ public class CartService {
     }
 
 
-
-
     @Transactional
     public void changeOption(Long memberId, Long cartId, String newOptionValue) {
-        // 1. 장바구니 항목을 memberId와 cartId를 기준으로 찾습니다.
+
+        // 1. 장바구니 항목 조회
         Cart cart = cartRepository.findByCartIdAndMember_Id(cartId, memberId)
                 .orElseThrow(() -> new RuntimeException("장바구니 항목을 찾을 수 없습니다."));
 
-        // 2. 기존 상품과 옵션 값을 가져옵니다.
         Product product = cart.getProduct();
-        String currentOptionValue = cart.getOptionValue();  // 현재 저장된 옵션 값
 
-        // 3. 옵션 값이 바뀌었으면, 새로운 옵션 값으로 업데이트합니다.
-        if (!currentOptionValue.equals(newOptionValue)) {
-            cart.setOptionValue(newOptionValue);  // 새로운 옵션 값으로 변경
+        // 2. 단품이면 옵션 변경 불가
+        if (!product.getIsOption()) {
+            throw new IllegalArgumentException("단품 상품은 옵션을 변경할 수 없습니다.");
         }
 
-        // 4. 필요시, 가격 또는 재고 등을 체크할 수 있습니다.
-        // 예를 들어, 새로운 옵션에 대해 재고를 체크하거나, 가격을 업데이트하는 추가 로직을 구현할 수 있습니다.
-        // 추가적인 로직을 원하시면 이곳에 처리하면 됩니다.
+        // 3. 옵션 값 필수
+        if (newOptionValue == null || newOptionValue.isBlank()) {
+            throw new IllegalArgumentException("옵션 값이 필요합니다.");
+        }
 
-        // 5. 장바구니 항목 업데이트 후, 변경된 데이터를 저장합니다.
-        cartRepository.save(cart);  // 장바구니 항목 저장 (옵션 값 업데이트)
+        // 4. 같은 값이면 변경 불필요
+        if (newOptionValue.equals(cart.getOptionValue())) {
+            return;
+        }
+
+        // 5. 실제 존재하는 옵션인지 검증
+        boolean exists = product.getProductOptions().stream()
+                .anyMatch(opt -> newOptionValue.equals(opt.getOptionValue()));
+
+        if (!exists) {
+            throw new IllegalArgumentException("유효하지 않은 옵션입니다.");
+        }
+
+        // 6. 품목 재고 체크(옵션별 재고가 있다면 여기 추가)
+        // TODO: 옵션별 재고 구조 사용 시 확장
+        if (cart.getQuantity() > product.getStock()) {
+            throw new IllegalArgumentException("재고 부족");
+        }
+
+        // 7. 옵션 변경
+        cart.setOptionValue(newOptionValue);
+
+        // @Transactional에 의해 flush 자동 반영
     }
-
 
     /** -------------------------
      * 수량 변경 (동시성 보호)
@@ -297,6 +293,29 @@ public class CartService {
     @Transactional
     public void clearCartBySessionId(String sessionId) {
         cartRepository.deleteBySessionId(sessionId);
+    }
+
+    /** -------------------------
+     * 장바구니 엔티티(Cart) 하나를 화면으로 내려주는 DTO(CartItemDto) 로 변환
+     * ------------------------- */
+    private CartItemDto buildCartItemDto(Cart cart, String optionTitle) {
+        Product product = cart.getProduct();
+
+        String finalOptionTitle = (optionTitle == null) ? "" : optionTitle;
+        String optionValue = (cart.getOptionValue() == null) ? "" : cart.getOptionValue();
+
+        return CartItemDto.builder()
+                .cartId(cart.getCartId())
+                .productId(product.getProductId())
+                .productName(product.getProductName())
+                .thumbnail(product.getMainImg())
+                .quantity(cart.getQuantity())
+                .price(product.getSellPrice().intValue())
+                .stock(product.getStock())
+                .soldOut(product.getStock() <= 0)
+                .optionValue(optionValue)       // 단품이면 "", 옵션상품이면 "블랙" 같은 값
+                .optionTitle(finalOptionTitle)  // 단품이면 "", 옵션상품이면 "색상"
+                .build();
     }
 
 }

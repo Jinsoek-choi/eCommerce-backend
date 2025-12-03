@@ -57,7 +57,7 @@ public class OrderService {
         // -------------------------------
         for (Cart c : carts) {
             Product p = c.getProduct();
-            ProductOption opt = c.getOption();
+            ProductOption opt = resolveCartOption(c);
             int qty = c.getQuantity();
 
             BigDecimal unitPrice = (opt != null) ? opt.getSellPrice() : p.getSellPrice();
@@ -109,7 +109,7 @@ public class OrderService {
         for (Cart c : carts) {
 
             Product p = c.getProduct();
-            ProductOption opt = c.getOption();
+            ProductOption opt = resolveCartOption(c);
             int qty = c.getQuantity();
 
             BigDecimal unitPrice = (opt != null) ? opt.getSellPrice() : p.getSellPrice();
@@ -257,4 +257,32 @@ public class OrderService {
 
         return dtos;
     }
+
+
+    /** Cart에 담긴 optionValue로 실제 ProductOption 찾기 */
+    private ProductOption resolveCartOption(Cart cart) {
+
+        Product product = cart.getProduct();
+
+        // 단품 상품이면 옵션 없음
+        if (!product.getIsOption()) {
+            return null;
+        }
+
+        String optionValue = cart.getOptionValue();
+
+        if (optionValue == null || optionValue.isBlank()) {
+            throw new RuntimeException("옵션 상품인데 옵션 값이 비어 있습니다. productId="
+                    + product.getProductId());
+        }
+
+        return product.getProductOptions().stream()
+                .filter(o -> optionValue.equals(o.getOptionValue()))
+                .findFirst()
+                .orElseThrow(() ->
+                        new RuntimeException("상품에 존재하지 않는 옵션 값입니다. productId="
+                                + product.getProductId() + ", optionValue=" + optionValue));
+    }
+
+
 }

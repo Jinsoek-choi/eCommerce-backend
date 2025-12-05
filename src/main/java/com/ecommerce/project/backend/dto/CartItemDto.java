@@ -19,8 +19,6 @@ public class CartItemDto {
     private String optionValue;  // 옵션 정보 (없으면 null)
     private String optionTitle;
 
-    private OptionDto option;   // option 객체 추가
-
 }
 
 

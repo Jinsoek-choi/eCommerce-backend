@@ -1,7 +1,6 @@
 package com.ecommerce.project.backend.service;
 
 import com.ecommerce.project.backend.domain.*;
-import com.ecommerce.project.backend.dto.OptionDto;
 import com.ecommerce.project.backend.dto.ProductDto;
 import com.ecommerce.project.backend.dto.ProductImageDto;
 import com.ecommerce.project.backend.dto.ProductOptionDto;
@@ -10,8 +9,6 @@ import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
-import java.math.BigDecimal;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
@@ -96,101 +93,67 @@ public class AdminProductService {
 
         return savedProduct;  // 저장된 Product 반환
     }
+
+    /** 상품 수정 */
+    public Product updateProduct(Long productId, ProductDto productDto) {
+
+        // 1. 기존 상품 조회
+        Product existingProduct = productRepository.findById(productId)
+                .orElseThrow(() -> new RuntimeException("상품을 찾을 수 없습니다."));
+
+        // 2. 상품 유효성 검사 (재고, 가격 등)
+        if (productDto.getStock() < 0) {
+            throw new IllegalArgumentException("재고는 음수가 될 수 없습니다.");
+        }
+        if (productDto.getSellPrice().compareTo(productDto.getConsumerPrice()) > 0) {
+            throw new IllegalArgumentException("판매가는 소비자가보다 높을 수 없습니다.");
+        }
+
+        // 2. 상품 옵션 처리 (상품이 옵션이 있으면 그에 맞는 옵션들을 처리)
+        if (productDto.getIsOption() != null && productDto.getIsOption()) {
+            List<ProductOption> updatedOptions = productDto.getOptions().stream()
+                    .map(ProductOptionDto::fromEntity) // 메서드 참조
+                    .collect(Collectors.toList());
+            productOptionRepository.saveAll(updatedOptions); // 옵션 일괄 저장
+        }
+
+        // 3. 총 재고 처리 (옵션 상품일 경우 옵션 재고 합산, 아니면 상품Dto에서 받은 재고로 업데이트)
+        if (existingProduct.getIsOption()) {
+            int totalStock = existingProduct.getOptions().stream()
+                    .mapToInt(ProductOption::getStock)
+                    .sum();
+            existingProduct.setStock(totalStock); // 총 재고 갱신
+        } else {
+            existingProduct.setStock(productDto.getStock()); // 단일 상품일 경우, 직접 받은 재고로 갱신
+        }
+
+
+        // 4. 이미지 처리 (서브 이미지가 있을 경우 처리)
+        if (productDto.getSubImages() != null && !productDto.getSubImages().isEmpty()) {
+            List<ProductImage> updatedImages = productDto.getSubImages().stream()
+                    .map(imageDto -> ProductImage.fromDto(imageDto, productRepository))  // ProductImage로 변환
+                    .collect(Collectors.toList());
+            productImageRepository.saveAll(updatedImages); // 이미지 저장
+        }
+
+        // 5. 카테고리 처리 (상품과 연결된 카테고리 수정)
+        List<CategoryLink> categoryLinks = categoryLinkRepository.findByProduct_ProductId(productId);
+        CategoryLink categoryLink = categoryLinks.stream()
+                .findFirst()  // List에서 첫 번째 항목을 가져옵니다.
+                .orElseThrow(() -> new RuntimeException("CategoryLink not found for productId: " + productId));  // 값이 없을 경우 예외 처리
+        CategoryLink updatedCategoryLink = new CategoryLink(
+                productDto.getCategoryCode(), categoryLink.getProduct());
+        categoryLinkRepository.save(updatedCategoryLink);  // 새로운 객체 저장
+
+        // 6. 상품 정보 업데이트 (상품 이름, 가격 등 기본 정보 업데이트)
+        existingProduct.updateProductInfo(productDto);
+
+        // 7. 수정된 상품 저장 (모든 수정 사항을 반영하여 상품 저장)
+        return productRepository.save(existingProduct); // 수정된 상품 반환
+
+    }
 }
 
-//    /** 상품 수정 */
-//    @Transactional
-//    public Product updateProduct(Long productId, ProductDto productDto) {
-//        // 기존 상품 조회
-//        Product existingProduct = productRepository.findById(productId)
-//                .orElseThrow(() -> new IllegalArgumentException("상품을 찾을 수 없습니다. ID: " + productId));
-//
-//        // 상품 정보 수정
-//        existingProduct.updateProductInfo(productDto);
-//
-//        // 기존 옵션 삭제 후 새 옵션 추가
-//        if (productDto.getIsOption() != null && productDto.getIsOption()) {
-//            // 기존 옵션 삭제
-//            productOptionRepository.deleteAllByProduct_ProductId(productId);
-//
-//            // 새 옵션 추가
-//            for (OptionDto optionDto : productDto.getOptions()) {
-//                // OptionDto에서 값을 추출하여 ProductOptionDto로 변환
-//                ProductOptionDto optionDto = ProductOptionDto.builder()
-//                        .optionTitle(optionDto.getOptionTitle())
-//                        .optionValue(optionDto.getOptionValue())
-//                        .stock(optionDto.getStock())
-//                        .isShow(optionDto.getIsShow())
-//                        .colorCode(optionDto.getColorCode())
-//                        .sellPrice(optionDto.getSellPrice())
-//                        .consumerPrice(optionDto.getConsumerPrice())
-//                        .productId(existingProduct.getProductId())  // 기존 상품과 연결
-//                        .build();
-//
-//                // ProductOptionDto에서 ProductOption 엔티티로 변환
-//                ProductOption option = new ProductOption(
-//                        optionDto.getOptionTitle(),
-//                        optionDto.getOptionValue(),
-//                        optionDto.getStock(),
-//                        optionDto.getIsShow(),
-//                        optionDto.getColorCode(),
-//                        optionDto.getSellPrice(),
-//                        optionDto.getConsumerPrice(),
-//                        existingProduct // 기존 상품과 연결
-//                );
-//
-//                // 상품 옵션 저장
-//                productOptionRepository.save(option);
-//            }
-//        }
-//
-//
-//        // 기존 이미지 삭제 후 새 이미지 추가
-//        if (productDto.getMainImg() != null && !productDto.getMainImg().isEmpty()) {
-//            // 메인 이미지 저장
-//            ProductImage mainImage = new ProductImage(productDto.getMainImg(), existingProduct);
-//            productImageRepository.save(mainImage);
-//        }
-//
-//        // 서브 이미지 처리 (여러 개의 이미지 추가)
-//        if (productDto.getSubImages() != null && !productDto.getSubImages().isEmpty()) {
-//            // 기존 서브 이미지 삭제
-//            productImageRepository.deleteAllByProduct_ProductId(productId);
-//            // 서브 이미지 추가
-//            int sortOrder = 2;  // 서브 이미지의 시작 sortOrder 값
-//            for (String imageUrl : productDto.getSubImages()) {  // subImages가 String의 리스트
-//                ProductImage productImage = ProductImage.builder()
-//                        .imageUrl(imageUrl)  // imageUrl로 문자열을 전달
-//                        .sortOrder(sortOrder++)  // 순서대로 증가
-//                        .product(existingProduct)  // 상품과 연결
-//                        .build();
-//                productImageRepository.save(productImage);  // 서브 이미지 저장
-//            }
-//        }
-//
-//        // 저장된 상품 업데이트
-//        return productRepository.save(existingProduct);
-//    }
-//
-//    /** 할인가(판매가) 수정 */
-//    public void updateSellPrice(Long productId, BigDecimal newSellPrice) {
-//        Product product = productRepository.findById(productId)
-//                .orElseThrow(() -> new IllegalArgumentException("상품을 찾을 수 없습니다. ID: " + productId));
-//
-//        // 판매가 수정
-//        product.updateSellPrice(newSellPrice);
-//        productRepository.save(product);
-//    }
-//
-//    /** 재고 수정 */
-//    public void updateStock(Long productId, int newStock) {
-//        Product product = productRepository.findById(productId)
-//                .orElseThrow(() -> new IllegalArgumentException("상품을 찾을 수 없습니다. ID: " + productId));
-//
-//        // 재고 수정
-//        product.updateStock(newStock);
-//        productRepository.save(product);
-//    }
 //
 //    /** 상품 삭제 */
 //    public void deleteProduct(Long productId) {

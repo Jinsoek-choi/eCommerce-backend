@@ -63,5 +63,5 @@ musinsa:
 # - secret: 결제 조회/검증 시 필요한 API Secret
 # --------------------------------------------------
 portone:
-  store-id: ${STORE-ID}
+  store-id: ${STORE_ID}
   secret: ${SECRET}

@@ -37,7 +37,9 @@ public class OrderService {
                 .orElseThrow(() -> new RuntimeException("배송지 없음"));
 
         // 주문 번호 생성
-        String orderNum = "ORD-" + UUID.randomUUID().toString().substring(0, 8);
+        String date = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+        String random = UUID.randomUUID().toString().substring(0, 6);
+        String orderNum = "YDJ-" + date + "-" + random;
 
         List<OrderItemDto> itemDtos = new ArrayList<>();
         BigDecimal totalPrice = BigDecimal.ZERO;

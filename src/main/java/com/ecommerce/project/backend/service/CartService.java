@@ -61,7 +61,7 @@ public class CartService {
             if (existing.isPresent()) {
                 cart = existing.get();
                 int newQty = cart.getQuantity() + req.getQuantity();
-                if (newQty > product.getStock()) throw new IllegalArgumentException("재고 부족");
+                if (newQty > productOption.getStock()) throw new IllegalArgumentException("재고 부족");
                 cart.setQuantity(newQty);
             } else {
                 cart = Cart.builder()

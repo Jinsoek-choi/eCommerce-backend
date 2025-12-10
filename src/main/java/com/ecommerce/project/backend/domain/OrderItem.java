@@ -38,7 +38,7 @@ public class OrderItem {
     private BigDecimal subtotal;
 
     // ---------------------------
-    // ✅ 주문 시 저장되는 스냅샷 정보
+    //  주문 시 저장되는 스냅샷 정보
     // ---------------------------
     @Column(name = "product_name")
     private String productName;

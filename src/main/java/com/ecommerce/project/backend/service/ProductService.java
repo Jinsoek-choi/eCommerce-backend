@@ -139,7 +139,6 @@ public class ProductService {
                 .userLiked(userLiked)
                 .build();
     }
-
     public void updateProductStockAndStatus(Long productId) {
 
         Product product = productRepository.findById(productId)
@@ -172,6 +171,7 @@ public class ProductService {
     }
 
 
+
     /**
      * 상품 수정
      */
@@ -194,6 +194,8 @@ public class ProductService {
                 productOptionRepository.save(option);  // 새 옵션 저장
             });
         }
+
+        updateProductStockAndStatus(productId);
 
         return productRepository.save(existingProduct);
 

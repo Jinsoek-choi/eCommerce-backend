@@ -51,7 +51,7 @@ public class ProductOptionService {
 
         ProductOption saved = productOptionRepository.save(entity);
 
-        // ⭐ 상품 재고 자동 업데이트
+        // 상품 재고 자동 업데이트
         updateProductTotalStock(dto.getProductId());
 
         return ProductOptionMapper.toDto(saved);

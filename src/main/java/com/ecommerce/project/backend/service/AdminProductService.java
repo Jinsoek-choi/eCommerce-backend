@@ -67,7 +67,7 @@ public class AdminProductService {
                 .orElseThrow(() -> new RuntimeException("존재하지 않는 카테고리입니다."));
 
         // 4. 상품 옵션 처리
-//        List<ProductOption> options = new ArrayList<>();
+        //  List<ProductOption> options = new ArrayList<>();
         List<ProductOption> options;
         AtomicInteger totalStock = new AtomicInteger(0);
 
